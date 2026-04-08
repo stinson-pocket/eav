@@ -1,0 +1,58 @@
+name: Site QA & Monitoring
+
+on:
+  schedule:
+    - cron: '0 20 * * *' # daily at 20:00 UTC (adjust as needed)
+  workflow_dispatch: {}
+
+jobs:
+  run-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install deps
+        run: |
+          cd workspace/eav-automation
+          npm ci
+      - name: Run checks
+        env:
+          WP_SITE: ${{ secrets.WP_SITE }}
+          WP_USER: ${{ secrets.WP_USER }}
+          WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          cd workspace/eav-automation
+          npm run check:all || echo "CHECKS_FAILED=$?" > .check_fail
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eav-reports
+          path: workspace/eav-automation/reports/**
+      - name: Notify channels
+        if: always()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+        run: |
+          cd workspace/eav-automation
+          node scripts/notify_channels.js || echo 'notify failed'
+      - name: Upload to Google Drive (optional)
+        if: always()
+        env:
+          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: |
+          cd workspace/eav-automation
+          if [ -n "$GDRIVE_SERVICE_ACCOUNT_JSON" ] && [ -n "$GDRIVE_FOLDER_ID" ]; then node scripts/upload_to_drive.js || echo 'drive upload failed'; else echo 'drive not configured'; fi
