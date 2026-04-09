@@ -18,7 +18,12 @@ jobs:
         with:
           node-version: '18'
       - name: Install deps
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
       - name: Run checks
         env:
           WP_SITE: ${{ secrets.WP_SITE }}
