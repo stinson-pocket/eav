@@ -3,15 +3,40 @@ const path = require('path');
 const { google } = require('googleapis');
 require('dotenv').config();
 
+function parseServiceAccountSecret(rawValue) {
+  if (!rawValue) throw new Error('GDRIVE_SERVICE_ACCOUNT_JSON is empty.');
+  const value = String(rawValue).trim().replace(/^['"]|['"]$/g, '');
+
+  // Accept plain JSON first (common with `gh secret set ... < file.json`).
+  try {
+    return JSON.parse(value);
+  } catch (_) {
+    // Fall through and try base64.
+  }
+
+  try {
+    const decoded = Buffer.from(value, 'base64').toString('utf8');
+    return JSON.parse(decoded);
+  } catch (_) {
+    throw new Error(
+      'GDRIVE_SERVICE_ACCOUNT_JSON is neither valid JSON nor base64-encoded JSON.'
+    );
+  }
+}
+
 async function main() {
-  const keyJsonB64 = process.env.GDRIVE_SERVICE_ACCOUNT_JSON;
-  const folderId = process.env.GDRIVE_FOLDER_ID;
-  if (!keyJsonB64 || !folderId) {
+  const rawServiceAccount = process.env.GDRIVE_SERVICE_ACCOUNT_JSON;
+  const folderId = process.env.GDRIVE_FOLDER_ID ? process.env.GDRIVE_FOLDER_ID.trim() : '';
+  if (!rawServiceAccount || !folderId) {
     console.log('GDrive service account JSON or folder ID not provided; skipping upload.');
     return;
   }
 
-  const keyJson = JSON.parse(Buffer.from(keyJsonB64, 'base64').toString('utf8'));
+  const keyJson = parseServiceAccountSecret(rawServiceAccount);
+  if (typeof keyJson.private_key === 'string') {
+    keyJson.private_key = keyJson.private_key.replace(/\\n/g, '\n');
+  }
+
   const jwtClient = new google.auth.JWT(
     keyJson.client_email,
     null,
@@ -39,4 +64,10 @@ async function main() {
   }
 }
 
-main().catch(err => { console.error('Drive upload failed', err.message); process.exit(2); });
+main().catch(err => {
+  console.error('Drive upload failed', err.message);
+  console.error(
+    'Hint: set GDRIVE_SERVICE_ACCOUNT_JSON to the full JSON key (or base64 JSON), and share the target Drive folder with the service account email.'
+  );
+  process.exit(2);
+});

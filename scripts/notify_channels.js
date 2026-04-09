@@ -4,6 +4,12 @@ const axios = require('axios');
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 
+function readSecret(name) {
+  const value = process.env[name];
+  if (!value) return '';
+  return String(value).trim().replace(/^['"]|['"]$/g, '');
+}
+
 async function readLatestSummary() {
   const dir = path.join(__dirname, '..', 'reports');
   if (!fs.existsSync(dir)) return null;
@@ -14,26 +20,32 @@ async function readLatestSummary() {
 }
 
 async function notifyDiscord(text) {
-  const url = process.env.DISCORD_WEBHOOK_URL;
+  const url = readSecret('DISCORD_WEBHOOK_URL');
   if (!url) return;
   try {
-    await axios.post(url, { content: text });
+    const parsed = new URL(url);
+    if (!/^discord(?:app)?\.com$/i.test(parsed.hostname.replace(/^www\./, ''))) {
+      throw new Error('DISCORD_WEBHOOK_URL does not look like a Discord webhook URL');
+    }
+    await axios.post(url, { content: text }, { timeout: 15000 });
     console.log('Discord notified');
   } catch (err) {
-    console.warn('Discord notify failed', err.message);
+    console.warn('Discord notify failed', err.response?.data?.message || err.message);
   }
 }
 
 async function notifyTelegram(text) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
+  const token = readSecret('TELEGRAM_BOT_TOKEN');
+  const chatId = readSecret('TELEGRAM_CHAT_ID');
   if (!token || !chatId) return;
   try {
+    await axios.get(`https://api.telegram.org/bot${token}/getMe`, { timeout: 15000 });
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
-    await axios.post(url, { chat_id: chatId, text });
+    await axios.post(url, { chat_id: chatId, text }, { timeout: 15000 });
     console.log('Telegram notified');
   } catch (err) {
-    console.warn('Telegram notify failed', err.message);
+    const details = err.response?.data?.description || err.message;
+    console.warn('Telegram notify failed', details);
   }
 }
 

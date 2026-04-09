@@ -5,6 +5,9 @@ on:
     - cron: '0 20 * * *' # daily at 20:00 UTC (adjust as needed)
   workflow_dispatch: {}
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   run-checks:
     runs-on: ubuntu-latest
