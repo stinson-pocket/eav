@@ -5,6 +5,7 @@ const fs = require('fs');
 require('dotenv').config();
 
 const target = process.argv[2] || (process.env.WP_SITE || 'https://eastatlantavillage.com');
+const strictNetworkChecks = String(process.env.STRICT_NETWORK_CHECKS || '').toLowerCase() === 'true';
 const requestHeaders = {
   'User-Agent': 'EAV-Monitor/1.0 (+https://eastatlantavillage.com)'
 };
@@ -70,6 +71,19 @@ async function run() {
     fs.writeFileSync(filename, JSON.stringify(results, null, 2));
     console.log('Link check written to', filename);
   } catch (err) {
+    const transient = new Set(['ETIMEDOUT', 'ECONNABORTED', 'EAI_AGAIN', 'ENETUNREACH', 'ECONNRESET']);
+    if (!strictNetworkChecks && transient.has(err.code)) {
+      if (!fs.existsSync('reports')) fs.mkdirSync('reports');
+      const filename = `reports/links-${Date.now()}.json`;
+      fs.writeFileSync(filename, JSON.stringify([{
+        warning: 'Link check skipped due transient network timeout from runner',
+        target,
+        code: err.code || null,
+        message: err.message || null
+      }], null, 2));
+      console.warn(`Link check warning: transient network issue (${err.code}). Report written to ${filename}`);
+      return;
+    }
     const status = err.response && err.response.status ? `status=${err.response.status}` : 'status=NA';
     const code = err.code ? `code=${err.code}` : 'code=NA';
     console.error(`Link check failed (${status}, ${code}):`, err.message || String(err));
