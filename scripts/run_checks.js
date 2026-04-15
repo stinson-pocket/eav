@@ -10,7 +10,12 @@ function runCmd(cmd) {
     return { ok: true };
   } catch (err) {
     console.error('Command failed:', cmd);
-    return { ok: false, message: err.message };
+    return {
+      ok: false,
+      message: err.message,
+      exitStatus: typeof err.status === 'number' ? err.status : null,
+      signal: err.signal || null
+    };
   }
 }
 
