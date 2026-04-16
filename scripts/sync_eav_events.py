@@ -135,7 +135,8 @@ def parse_eaca_events(now_utc: datetime, cutoff_utc: datetime) -> list[dict]:
     if not api_key:
         raise RuntimeError("Unable to find EACA calendar API key on source page.")
 
-    time_min = now_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    # Use the next-day cutoff directly so Wednesday refresh only pulls Thursday+ items.
+    time_min = cutoff_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
     time_max = (now_utc + timedelta(days=DEFAULT_EACA_LOOKAHEAD_DAYS)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     params = {
         "key": api_key,
@@ -322,7 +323,8 @@ def run(site_root: pathlib.Path):
 
     print(
         f"Synced {len(merged)} events to {out_path} "
-        f"(EABA: {len(eaba)}, EACA: {len(eaca)}, EARL: {len(badearl)})"
+        f"(EABA: {len(eaba)}, EACA: {len(eaca)}, EARL: {len(badearl)}, "
+        f"cutoff_local: {cutoff_utc.astimezone(local_tz()).isoformat()})"
     )
 
 
