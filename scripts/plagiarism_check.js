@@ -9,6 +9,17 @@ const requestHeaders = {
   'User-Agent': 'EAV-Monitor/1.0 (+https://eastatlantavillage.com)'
 };
 
+function writeWarningReport(payload) {
+  if (!fs.existsSync('reports')) fs.mkdirSync('reports');
+  const filename = `reports/plagiarism-${Date.now()}.json`;
+  fs.writeFileSync(filename, JSON.stringify(payload, null, 2));
+  return filename;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function run() {
   try {
     // fetch homepage HTML as a basic sample for plagiarism checks
@@ -25,10 +36,28 @@ async function run() {
     }
 
     // Example POST to a plagiarism endpoint (adjust to provider)
-    const apiRes = await axios.post(process.env.PLAGIARISM_API_ENDPOINT, { text: text.slice(0, 5000) }, {
+    const requestBody = { text: text.slice(0, 5000) };
+    const requestConfig = {
       headers: { Authorization: `Bearer ${process.env.PLAGIARISM_API_KEY}` },
       timeout: 20000
-    });
+    };
+    let apiRes;
+    const maxAttempts = 3;
+    let lastErr = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        apiRes = await axios.post(process.env.PLAGIARISM_API_ENDPOINT, requestBody, requestConfig);
+        break;
+      } catch (err) {
+        lastErr = err;
+        const status = err && err.response ? err.response.status : null;
+        const retryable = status === 429 || (status !== null && status >= 500);
+        if (!retryable || attempt === maxAttempts) {
+          throw err;
+        }
+        await sleep(attempt * 1500);
+      }
+    }
 
     const filename = `reports/plagiarism-${Date.now()}.json`;
     if (!fs.existsSync('reports')) fs.mkdirSync('reports');
@@ -36,16 +65,21 @@ async function run() {
     console.log('Plagiarism report written to', filename);
   } catch (err) {
     const transient = new Set(['ETIMEDOUT', 'ECONNABORTED', 'EAI_AGAIN', 'ENETUNREACH', 'ECONNRESET']);
-    if (!strictNetworkChecks && transient.has(err.code)) {
-      if (!fs.existsSync('reports')) fs.mkdirSync('reports');
-      const filename = `reports/plagiarism-${Date.now()}.json`;
-      fs.writeFileSync(filename, JSON.stringify({
-        warning: 'Plagiarism check skipped due transient network timeout from runner',
+    const status = err && err.response ? err.response.status : null;
+    const isRateLimit = status === 429;
+    const isProviderTransient = status !== null && status >= 500;
+    const shouldSoftFail = !strictNetworkChecks && (transient.has(err.code) || isRateLimit || isProviderTransient);
+    if (shouldSoftFail) {
+      const filename = writeWarningReport({
+        warning: 'Plagiarism check skipped due transient provider/network condition',
         target,
+        httpStatus: status,
         code: err.code || null,
-        message: err.message || null
-      }, null, 2));
-      console.warn(`Plagiarism check warning: transient network issue (${err.code}). Report written to ${filename}`);
+        message: err.message || null,
+        strictNetworkChecks,
+        guidance: 'Treat as warning; retry in next scheduled run.'
+      });
+      console.warn(`Plagiarism check warning: transient provider/network issue (status=${status || 'n/a'}, code=${err.code || 'n/a'}). Report written to ${filename}`);
       return;
     }
     console.error('Plagiarism check failed:', err.message || String(err));
