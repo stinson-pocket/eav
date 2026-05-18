@@ -1,0 +1,42 @@
+name: Manual Publish EAV Story
+
+on:
+  workflow_dispatch:
+    inputs:
+      payload_path:
+        description: Story payload JSON path
+        required: true
+        default: docs/news-drafts/eav-arc-commercial-planning-2026-05-18/payload.json
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+      - name: Publish story to WordPress
+        env:
+          WP_SITE: ${{ secrets.WP_SITE }}
+          WP_USER: ${{ secrets.WP_USER }}
+          WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+        run: |
+          test -n "$WP_SITE" || (echo "Missing WP_SITE" && exit 1)
+          test -n "$WP_USER" || (echo "Missing WP_USER" && exit 1)
+          test -n "$WP_APP_PASSWORD" || (echo "Missing WP_APP_PASSWORD" && exit 1)
+          npm run wp:publish-story -- "${{ inputs.payload_path }}" | tee publish-result.json
+      - name: Upload publish result
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: eav-publish-result
+          path: publish-result.json
+          if-no-files-found: warn
