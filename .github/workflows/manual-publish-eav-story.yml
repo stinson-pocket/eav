@@ -32,6 +32,7 @@ jobs:
           test -n "$WP_SITE" || (echo "Missing WP_SITE" && exit 1)
           test -n "$WP_USER" || (echo "Missing WP_USER" && exit 1)
           test -n "$WP_APP_PASSWORD" || (echo "Missing WP_APP_PASSWORD" && exit 1)
+          set -o pipefail
           npm run wp:publish-story -- "${{ inputs.payload_path }}" | tee publish-result.json
       - name: Upload publish result
         if: always()
